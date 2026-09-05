@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منظّم ومنبه الأدوية اليومي</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            max-width: 650px;
+            margin: 20px auto;
+            padding: 15px;
+        }
+        h2 {
+            text-align: center;
+            color: #00796b;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #555;
+            font-size: 13px;
+            margin-bottom: 15px;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            background: #fff;
+            padding: 12px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        button.reset-btn {
+            background-color: #e57373;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button.reset-btn:hover {
+            background-color: #c62828;
+        }
+        button.audio-btn {
+            background-color: #00796b;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: right;
+        }
+        th, td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #00796b;
+            color: white;
+            font-size: 15px;
+        }
+        tr.completed td {
+            background-color: #e0f2f1;
+            color: #555;
+            text-decoration: line-through;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            background: transparent;
+        }
+        input[type="time"] {
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            background: transparent;
+        }
+        input[type="checkbox"] {
+            width: 22px;
+            height: 22px;
+            cursor: pointer;
+        }
+        .checkbox-cell, .time-cell {
+            text-align: center;
+        }
+        #alertBox {
+            display: none;
+            background-color: #ff5252;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <h2>💊 جدول ومنبه الأدوية اليومي</h2>
+    <div class="subtitle">اضغط على زر "تفعيل التنبيهات الصوتية" أول مرة للسماح للمنبه بالعمل</div>
+
+    <div id="alertBox">⚠️ حان موعد أخذ دواء: <span id="alertMedName"></span>!</div>
+
+    <div class="controls">
+        <button class="audio-btn" onclick="enableAudio()">🔔 تفعيل التنبيهات الصوتية</button>
+        <button class="reset-btn" onclick="resetCheckboxes()">إلغاء جميع الصحاح (يوم جديد)</button>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>اسم الدواء</th>
+                    <th class="time-cell">الوقت</th>
+                    <th class="checkbox-cell">تم</th>
+                </tr>
+            </thead>
+            <tbody id="medTableBody">
+                <!-- سيتم تعبئة الجدول تلقائياً -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // الأدوية الافتراضية بناءً على طلبك
+        const defaultMeds = [
+            { name: "الغدة", time: "05:00", checked: false },
+            { name: "القلب", time: "08:00", checked: false },
+            { name: "الضغط", time: "09:30", checked: false },
+            { name: "مدر البول", time: "10:30", checked: false },
+            { name: "منظم السكري", time: "16:00", checked: false },
+            { name: "مساعد السكري", time: "16:15", checked: false },
+            { name: "المميع", time: "17:00", checked: false },
+            { name: "الضغط (مساءً)", time: "21:00", checked: false },
+            { name: "الدهنيات", time: "23:00", checked: false }
+        ];
+
+        let audioCtx = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            initTable();
+            setInterval(checkAlarms, 1000); // فحص التنبيهات كل ثانية
+        });
+
+        function enableAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            alert("تم تفعيل التنبيهات الصوتية بنجاح!");
+        }
+
+        function playBeep() {
+            if (!audioCtx) return;
+            try {
+                let osc = audioCtx.createOscillator();
+                let gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 587.33; // نوتة صوتية للتنبيه
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                setTimeout(() => { osc.stop(); }, 500);
+            } catch(e) {
+                console.log(e);
+            }
+        }
+
+        function initTable() {
+            const tbody = document.getElementById("medTableBody");
+            tbody.innerHTML = "";
+
+            let medsData = JSON.parse(localStorage.getItem("myMedsSchedule")) || defaultMeds;
+
+            medsData.forEach((med, i) => {
+                const tr = document.createElement("tr");
+                if (med.checked) tr.classList.add("completed");
+
+                // اسم الدواء
+                const tdName = document.createElement("td");
+                const inputName = document.createElement("input");
+                inputName.type = "text";
+                inputName.value = med.name;
+                inputName.oninput = () => updateData(i, 'name', inputName.value);
+                tdName.appendChild(inputName);
+
+                // الوقت
+                const tdTime = document.createElement("td");
+                tdTime.className = "time-cell";
+                const inputTime = document.createElement("input");
+                inputTime.type = "time";
+                inputTime.value = med.time;
+                inputTime.onchange = () => updateData(i, 'time', inputTime.value);
+                tdTime.appendChild(inputTime);
+
+                // خانة الـ Checkbox
+                const tdCheck = document.createElement("td");
+                tdCheck.className = "checkbox-cell";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = med.checked;
+                checkbox.onchange = () => toggleCheck(i, checkbox.checked, tr);
+                tdCheck.appendChild(checkbox);
+
+                tr.appendChild(tdName);
+                tr.appendChild(tdTime);
+                tr.appendChild(tdCheck);
+                tbody.appendChild(tr);
+            });
+
+            if (!localStorage.getItem("myMedsSchedule")) {
+                saveData(medsData);
+            }
+        }
+
+        function updateData(index, field, value) {
+            let medsData = JSON.parse(localStorage.getItem("myMedsSchedule")) || defaultMeds;
+            medsData[index][field] = value;
+            saveData(medsData);
+        }
+
+        function toggleCheck(index, isChecked, rowElement) {
+            let medsData = JSON.parse(localStorage.getItem("myMedsSchedule")) || defaultMeds;
+            medsData[index].checked = isChecked;
+            saveData(medsData);
+            
+            if (isChecked) {
+                rowElement.classList.add("completed");
+            } else {
+                rowElement.classList.remove("completed");
+            }
+        }
+
+        function saveData(data) {
+            localStorage.setItem("myMedsSchedule", JSON.stringify(data));
+        }
+
+        function checkAlarms() {
+            let medsData = JSON.parse(localStorage.getItem("myMedsSchedule")) || defaultMeds;
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const currentTime = `${hours}:${minutes}`;
+
+            let triggered = false;
+            medsData.forEach(med => {
+                // إذا جاء الوقت ولم يتم أخذ الدواء بعد
+                if (med.time === currentTime && !med.checked) {
+                    document.getElementById("alertMedName").textContent = med.name;
+                    document.getElementById("alertBox").style.display = "block";
+                    playBeep();
+                    triggered = true;
+                }
+            });
+
+            if (!triggered && document.getElementById("alertBox").style.display === "block") {
+                // إخفاء التنبيه إذا مر الوقت
+                // document.getElementById("alertBox").style.display = "none";
+            }
+        }
+
+        function resetCheckboxes() {
+            if (confirm("هل تريد إزالة جميع علامات الصح لبدء يوم جديد؟")) {
+                let medsData = JSON.parse(localStorage.getItem("myMedsSchedule")) || defaultMeds;
+                medsData.forEach(item => item.checked = false);
+                saveData(medsData);
+                document.getElementById("alertBox").style.display = "none";
+                initTable();
+            }
+        }
+    </script>
+</body>
+</html>
